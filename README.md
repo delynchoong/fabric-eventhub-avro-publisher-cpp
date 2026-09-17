@@ -144,10 +144,7 @@ if (-not (Test-Path $cmake)) {
 & $cmake --build "C:\b\eventhub-avro" --config Release
 ```
 
-In PowerShell, assigning the executable path to `$cmake` doesn't make
-`cmake` a command. The call operator (`& $cmake`) is required to execute the
-path stored in the variable. If Visual Studio is installed elsewhere, locate
-its CMake executable with:
+If Visual Studio is installed elsewhere, locate its CMake executable with:
 
 ```powershell
 Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" `
