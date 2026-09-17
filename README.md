@@ -1,8 +1,6 @@
 # C++ Avro Publisher for Azure Event Hubs
 
-This customer-ready sample generates simulated stock-ticker events, serializes
-each event as an Apache Avro Object Container File, and publishes it to Azure
-Event Hubs using passwordless Microsoft Entra authentication.
+This is a C++ **Event Hubs Avro publisher** sample that generates simulated stock-ticker events, serializes each event as an Apache Avro Object Container File, and publishes it to Azure Event Hubs using passwordless Microsoft Entra authentication. This is a sample and should be evaluated before using in production.
 
 The sample intentionally keeps the implementation in one source file:
 [`eventhub_avro_publisher.cpp`](eventhub_avro_publisher.cpp).
@@ -33,8 +31,16 @@ one `StockTick` record:
 }
 ```
 
-The body begins with the Avro container magic bytes `Obj\x01` and includes the
-writer schema. The AMQP message also contains:
+The body begins with the Avro container file signature `Obj\x01` and includes the
+writer schema.This is a form of short signature at the beginning of a file. It helps software recognize the file format before trying to read the rest.
+
+For an Avro Object Container File, the first four bytes are:
+
+```text
+4F 62 6A 01
+ O  b  j \x01
+ ```
+
 
 ```text
 Content-Type: avro/binary
@@ -44,6 +50,8 @@ Application property: avro.schema.name=sample.StockTick
 
 Azure Event Hubs stores and forwards the body as opaque bytes. A downstream
 consumer must be configured to parse the body as Avro.
+
+This sample uses AMQP endpoints, but Azure Event Hubs supports both AMQP endpoints and Kafka-compatible endpoints. They are two different ways of accessing the same Event Hub partitions and retained events.
 
 ### Field usage
 
