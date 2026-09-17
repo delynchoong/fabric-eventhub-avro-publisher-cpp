@@ -1,0 +1,9 @@
+{
+  "name": "eventhub-avro-publisher",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "avro-cpp",
+    "azure-identity-cpp",
+    "azure-messaging-eventhubs-cpp"
+  ]
+}
