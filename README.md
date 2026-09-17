@@ -220,9 +220,9 @@ Completed test: eventsSent=25, batchesSent=3
 
 No connection strings or access keys are required by the publisher.
 
-## Is this the recommended sending method?
+## Recommended sending method
 
-For this direct Eventhouse ingestion scenario, yes:
+For this direct Eventhouse ingestion scenario:
 
 1. Serialize each logical stock tick as its own complete Avro OCF body.
 2. Create an Event Hubs `EventDataBatch`.
@@ -240,6 +240,8 @@ throughput-oriented publisher, it is common to keep adding messages until
 `TryAdd` returns false, send the full batch, and then continue with a new
 batch. Production code should also define retry, cancellation, idempotency,
 and failed-message handling behavior.
+
+ This sample uses the Standard tier, where the maximum publication size is 1 MB for either one event or an entire batch. A good starting target is 500–800 KB per batch, leaving room for AMQP metadata and per-message overhead rather than aiming exactly at 1 MB. The current Avro messages are approximately 406 bytes each, so start with 500 messages per batch—about 203 KB of body data—or increase toward 1,000 messages—about 406 KB plus AMQP overhead—while monitoring latency and throughput.
 
 ## Configure a Fabric Eventhouse destination
 
