@@ -12,6 +12,7 @@ endif()
 find_package(avro-cpp CONFIG REQUIRED)
 find_package(azure-identity-cpp CONFIG REQUIRED)
 find_package(azure-messaging-eventhubs-cpp CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 add_executable(eventhub_avro_publisher eventhub_avro_publisher.cpp)
 if(MSVC)
@@ -26,4 +27,5 @@ target_link_libraries(
     PRIVATE
         avro-cpp::avrocpp
         Azure::azure-identity
-        Azure::azure-messaging-eventhubs)
+        Azure::azure-messaging-eventhubs
+        fmt::fmt)

@@ -1,10 +1,12 @@
 #include <azure/identity.hpp>
 #include <azure/messaging/eventhubs.hpp>
 
-// Avro C++ 1.12.1 uses fmt::format without including this header.
+// Avro C++ 1.12.1's Exception.hh calls fmt::format without including the
+// complete fmt formatting API. Include it first to keep Avro headers usable.
 #include <fmt/format.h>
 #include <avro/Compiler.hh>
 #include <avro/DataFile.hh>
+#include <avro/Decoder.hh>
 #include <avro/Encoder.hh>
 #include <avro/Specific.hh>
 #include <avro/Stream.hh>
