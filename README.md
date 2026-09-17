@@ -119,10 +119,20 @@ role.
 Use a short build path to avoid Windows dependency path-length problems:
 
 ```powershell
-$source = Join-Path (Get-Location) "eventhubAvro"
+$source = Get-Location
 $vcpkgRoot = Join-Path $env:USERPROFILE "vcpkg"
+$cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
 
-cmake `
+if (-not $cmake) {
+  $cmake = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+}
+if (-not (Test-Path $cmake)) {
+  throw "CMake was not found. Install CMake or the Visual Studio C++ CMake tools."
+}
+
+& $cmake --version
+
+& $cmake `
   -S $source `
   -B "C:\b\eventhub-avro" `
   -G "Visual Studio 17 2022" `
@@ -131,11 +141,19 @@ cmake `
   -DVCPKG_TARGET_TRIPLET=x64-windows `
   -DVCPKG_HOST_TRIPLET=x64-windows
 
-cmake --build "C:\b\eventhub-avro" --config Release
+& $cmake --build "C:\b\eventhub-avro" --config Release
 ```
 
-If `cmake` isn't on `PATH`, use the CMake executable installed with Visual
-Studio Build Tools.
+In PowerShell, assigning the executable path to `$cmake` doesn't make
+`cmake` a command. The call operator (`& $cmake`) is required to execute the
+path stored in the variable. If Visual Studio is installed elsewhere, locate
+its CMake executable with:
+
+```powershell
+Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" `
+  -Filter cmake.exe -File -Recurse -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty FullName
+```
 
 ## Build on Linux or macOS
 
