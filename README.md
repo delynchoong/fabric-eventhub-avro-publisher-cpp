@@ -31,16 +31,18 @@ one `StockTick` record:
 }
 ```
 
-The body begins with the Avro container file signature `Obj\x01` and includes the
-writer schema.This is a form of short signature at the beginning of a file. It helps software recognize the file format before trying to read the rest.
+The body begins with the Avro container file signature `Obj\x01` and includes
+the writer schema. This short signature helps software recognize the file
+format before trying to read the rest.
 
 For an Avro Object Container File, the first four bytes are:
 
 ```text
 4F 62 6A 01
  O  b  j \x01
- ```
+```
 
+The AMQP message also contains:
 
 ```text
 Content-Type: avro/binary
@@ -70,9 +72,61 @@ that are constant, unused, or already available from Event Hubs metadata.
 For a new schema, consistent `camelCase` names are conventional; these lowercase
 names are retained to match the existing `StockTicks` Eventhouse sample.
 
+### Handling five fixed fields and dynamic fields
+
+Avro isn't schema-less: every message still has a writer schema that defines
+all its fields. Eventhouse can nevertheless keep a stable table contract when
+the Avro records contain additional top-level fields. Store the five fields
+used for filtering and aggregation as typed columns, and capture everything
+else in a `dynamic` property bag:
+
+```kusto
+.create-merge table StockTicks (
+    eventname: string,
+    eventtime: datetime,
+    ticker: string,
+    price: real,
+    eventdesc: string,
+    properties: dynamic
+)
+```
+
+Map the fixed fields normally, then map the complete record to `properties`
+with `DropMappedFields`. The transform removes fields already mapped to typed
+columns, leaving only the additional fields:
+
+```kusto
+.create-or-alter table StockTicks ingestion avro mapping
+'StockTicksFlexibleAvroMapping'
+'[{"column":"eventname","path":"$.eventname"},
+  {"column":"eventtime","path":"$.eventtime","transform":"DateTimeFromUnixMilliseconds"},
+  {"column":"ticker","path":"$.ticker"},
+  {"column":"price","path":"$.price"},
+  {"column":"eventdesc","path":"$.eventdesc"},
+  {"column":"properties","path":"$","transform":"DropMappedFields"}]'
+```
+
+For example, a future Avro writer schema could add `exchange`, `currency`, or
+`sourceSystem` without adding Eventhouse columns. Query those values with:
+
+```kusto
+StockTicks
+| extend
+    exchange = tostring(properties.exchange),
+    currency = tostring(properties.currency)
+```
+
+If you control the producer, an even more governed design is to add one
+explicit Avro `properties` map and place optional attributes inside it. Avro
+map values must share one declared value schema, or use an explicit union of
+allowed types. Promote frequently queried or strongly typed properties to
+normal Eventhouse columns; keep sparse, changing attributes in `dynamic`.
+Avoid automatically creating a new table column for every incoming field,
+which leads to uncontrolled schema growth.
+
 ### Why use an Avro Object Container?
 
-For the validated direct Fabric Eventhouse connection, each Event Hubs message
+For the direct Fabric Eventhouse connection, each Event Hubs message
 must contain a complete Avro Object Container File. A raw Avro binary datum was
 rejected by this ingestion path because it has no `Obj\x01` header or embedded
 writer schema.
@@ -108,6 +162,7 @@ The vcpkg manifest restores:
 - Apache Avro C++
 - Azure Identity SDK for C++
 - Azure Event Hubs SDK for C++
+- fmt, used for an Avro C++ 1.12.1 header compatibility workaround
 
 ## Authenticate
 
@@ -164,7 +219,7 @@ Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" `
 
 ```bash
 cmake \
-  -S eventhubAvro \
+  -S . \
   -B build/eventhub-avro \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
@@ -241,7 +296,14 @@ throughput-oriented publisher, it is common to keep adding messages until
 batch. Production code should also define retry, cancellation, idempotency,
 and failed-message handling behavior.
 
- This sample uses the Standard tier, where the maximum publication size is 1 MB for either one event or an entire batch. A good starting target is 500–800 KB per batch, leaving room for AMQP metadata and per-message overhead rather than aiming exactly at 1 MB. The current Avro messages are approximately 406 bytes each, so start with 500 messages per batch—about 203 KB of body data—or increase toward 1,000 messages—about 406 KB plus AMQP overhead—while monitoring latency and throughput.
+This demo namespace uses the Standard tier, where the maximum
+publication size is 1 MB for either one event or an entire batch. A good
+starting target is 500-800 KB per batch, leaving room for AMQP metadata and
+per-message overhead rather than aiming exactly at 1 MB. The current Avro
+messages are approximately 406 bytes each, so start with 500 messages per
+batch (about 203 KB of body data) or increase toward 1,000 messages (about
+406 KB plus AMQP overhead) while monitoring latency and throughput. Check the
+limits for the tier used by your own namespace.
 
 ## Configure a Fabric Eventhouse destination
 
@@ -362,7 +424,8 @@ should report three batch sends: 2, 2, and 1 message.
 
 ### 2. Confirm Event Hubs accepted the send
 
-The process must exit with code `0` and print `Sent Avro OCF`. For repeatable
+The process must exit with code `0`, print `Sent batch`, and list each
+`Avro OCF` event. For repeatable
 integration testing, publish a small count such as 1-5 rather than a long
 continuous stream. Azure Event Hubs metrics can also confirm incoming
 messages, but they don't prove that Eventhouse decoded them.
