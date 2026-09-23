@@ -1,7 +1,10 @@
 # C++ Avro Publisher for Azure Event Hubs
 
+This C++ application generates simulated stock-ticker events, serializes each
+event as an Apache Avro Object Container File, and publishes it to Azure Event
+Hubs using Microsoft Entra authentication.
 
-The sample intentionally keeps the implementation in one source file:
+The implementation is contained in one source file:
 [`eventhub_avro_publisher.cpp`](eventhub_avro_publisher.cpp).
 
 ## Message format
@@ -52,11 +55,14 @@ Application property: avro.schema.name=sample.StockTick
 Azure Event Hubs stores and forwards the body as opaque bytes. A downstream
 consumer must be configured to parse the body as Avro.
 
-This sample uses AMQP endpoints, but Azure Event Hubs supports both AMQP endpoints and Kafka-compatible endpoints. They are two different ways of accessing the same Event Hub partitions and retained events.
+The Azure Event Hubs C++ SDK sends these messages over AMQP. Event Hubs also
+provides a Kafka-compatible endpoint over the same partitions and retained
+events. In Kafka terms, the Avro body is the record value and AMQP application
+properties correspond to Kafka record headers.
 
 ### Field usage
 
-| Field | Avro type | Purpose | Recommendation |
+| Field | Avro type | Purpose | Implementation |
 | --- | --- | --- | --- |
 | `eventname` | `string` | Logical event category | Keep when several event types share a table; otherwise it is optional |
 | `eventtime` | `long` / `timestamp-millis` | Source event time in Unix milliseconds | Required for time-series filtering and recommended over relying only on ingestion time |
@@ -105,8 +111,8 @@ columns, leaving only the additional fields:
   {"column":"properties","path":"$","transform":"DropMappedFields"}]'
 ```
 
-For example, a future Avro writer schema could add `exchange`, `currency`, or
-`sourceSystem` without adding Eventhouse columns. Query those values with:
+An Avro writer schema can add `exchange`, `currency`, or `sourceSystem`
+without adding Eventhouse columns. Query those values with:
 
 ```kusto
 StockTicks
@@ -115,32 +121,30 @@ StockTicks
     currency = tostring(properties.currency)
 ```
 
-If you control the producer, an even more governed design is to add one
-explicit Avro `properties` map and place optional attributes inside it. Avro
-map values must share one declared value schema, or use an explicit union of
-allowed types. Promote frequently queried or strongly typed properties to
-normal Eventhouse columns; keep sparse, changing attributes in `dynamic`.
-Avoid automatically creating a new table column for every incoming field,
-which leads to uncontrolled schema growth.
+For producer-controlled schemas, define an explicit Avro `properties` map and
+place optional attributes inside it. Avro map values share one declared value
+schema or an explicit union of allowed types. Frequently queried or strongly
+typed properties belong in normal Eventhouse columns; sparse and changing
+attributes belong in `dynamic`. This prevents a new table column from being
+created for every incoming field.
 
 ### Why use an Avro Object Container?
 
 For the direct Fabric Eventhouse connection, each Event Hubs message
-must contain a complete Avro Object Container File. A raw Avro binary datum was
-rejected by this ingestion path because it has no `Obj\x01` header or embedded
+must contain a complete Avro Object Container File. A raw Avro binary datum is
+incompatible because it has no `Obj\x01` header or embedded
 writer schema.
 
 Embedding the schema in every message adds overhead, so one-record containers
-aren't the most space-efficient general-purpose Avro transport. They are used
-here for compatibility with the direct Eventhouse `Avro` data format. For a
-different consumer that supports schema registries or externally supplied
-schemas, raw datum encoding may be more efficient.
+use more space than raw Avro datums. This implementation uses containers
+because the direct Eventhouse `Avro` data format requires the container header
+and embedded writer schema.
 
 ### Serialization and deserialization
 
 - **Serialization is required by the publisher.** It converts the in-memory
   `StockTick` C++ object into the Avro bytes sent in `EventData.Body`.
-- **Deserialization is not required to publish.** This sample uses it only when
+- **Deserialization is not required to publish.** The application uses it when
   `--validate-payload` is supplied. It reads the generated container back and
   verifies that it contains exactly one record matching the original object.
 - Eventhouse performs the downstream deserialization using the Avro writer
@@ -153,7 +157,7 @@ schemas, raw datum encoding may be more efficient.
 - [vcpkg](https://github.com/microsoft/vcpkg)
 - Azure CLI
 - An Azure Event Hubs namespace and Event Hub
-- `Azure Event Hubs Data Sender` assigned to your user or managed identity at
+- `Azure Event Hubs Data Sender` assigned to the user or managed identity at
   the Event Hub or namespace scope
 
 The vcpkg manifest restores:
@@ -274,9 +278,9 @@ Completed test: eventsSent=25, batchesSent=3
 
 No connection strings or access keys are required by the publisher.
 
-## Recommended sending method
+## Batching behavior
 
-For this direct Eventhouse ingestion scenario:
+The publisher sends data as follows:
 
 1. Serialize each logical stock tick as its own complete Avro OCF body.
 2. Create an Event Hubs `EventDataBatch`.
@@ -285,33 +289,23 @@ For this direct Eventhouse ingestion scenario:
 4. Send the batch using the long-lived `ProducerClient`.
 
 An Event Hubs batch is a transport optimization: it sends several independent
-EventData messages in one service operation. It doesn't combine all records
+EventData messages in one service operation. It does not combine all records
 into one EventData body. This preserves per-message metadata and lets
 Eventhouse decode each stock tick independently.
 
-The fixed `--batch-size` makes tests deterministic. In a production
-throughput-oriented publisher, it is common to keep adding messages until
-`TryAdd` returns false, send the full batch, and then continue with a new
-batch. Production code should also define retry, cancellation, idempotency,
-and failed-message handling behavior.
-
-This demo namespace uses the Standard tier, where the maximum
-publication size is 1 MB for either one event or an entire batch. A good
-starting target is 500-800 KB per batch, leaving room for AMQP metadata and
-per-message overhead rather than aiming exactly at 1 MB. The current Avro
-messages are approximately 406 bytes each, so start with 500 messages per
-batch (about 203 KB of body data) or increase toward 1,000 messages (about
-406 KB plus AMQP overhead) while monitoring latency and throughput. Check the
-limits for the tier used by your own namespace.
+`--batch-size` sets the maximum message count per send. `TryAdd` also checks
+the encoded AMQP size against the tier-specific Event Hubs publication limit.
+When the byte limit is reached first, the application sends the current batch,
+creates a new batch, and retries the rejected event.
 
 ## Configure a Fabric Eventhouse destination
 
 These steps configure a direct Azure Event Hubs data connection. A Fabric
-Eventstream isn't required.
+Eventstream is not required.
 
 ### 1. Create a dedicated consumer group
 
-Use one consumer group per downstream application so Eventhouse doesn't
+Use one consumer group per downstream application so Eventhouse does not
 compete with another receiver for partition ownership:
 
 ```powershell
@@ -323,7 +317,7 @@ az eventhubs eventhub consumer-group create `
   --name fabric-eventhouse
 ```
 
-The publisher doesn't select a consumer group. Consumer groups are selected
+The publisher does not select a consumer group. Consumer groups are selected
 only by receivers such as the Eventhouse data connection.
 
 ### 2. Create the Eventhouse table and Avro mapping
@@ -363,25 +357,175 @@ timestamp value into the Eventhouse `datetime` column. Without an explicit
 mapping, Eventhouse uses case-sensitive identity mapping, which is suitable
 only when source field names and types already match the table exactly.
 
-### 3. Create the direct data connection
+### 3. Create the table and mapping through the Kusto API
 
-In Fabric:
+Set the deployment values:
 
-1. Open the Eventhouse and select the target KQL database.
-2. Select **Get data** or **Data connections**, then create an
-   **Azure Event Hubs** connection.
-3. Select or create a cloud connection for the Event Hubs namespace.
-4. Select the Event Hub and the dedicated `fabric-eventhouse` consumer group.
-5. Configure:
+```powershell
+$subscriptionId = "<subscription-id>"
+$resourceGroup = "<resource-group>"
+$namespaceName = "<event-hubs-namespace>"
+$eventHubName = "<event-hub-name>"
+$consumerGroup = "fabric-eventhouse"
+$sasRuleName = "FabricEventhouseListen"
 
-   | Setting | Value |
-   | --- | --- |
-   | Data format | `Avro` |
-   | Target table | `StockTicks` |
-   | Mapping | `StockTicksAvroMapping` |
-   | Compression | `None` |
+$workspaceId = "<fabric-workspace-id>"
+$databaseId = "<kql-database-item-id>"
+$databaseName = "<kql-database-name>"
+$capacityId = "<fabric-capacity-id>"
+$queryServiceUri = "https://<cluster>.kusto.fabric.microsoft.com"
+```
 
-6. Create the connection and confirm that its status is active.
+Create the table and named Avro mapping through the Kusto management endpoint:
+
+```powershell
+$tableCommand = @'
+.create-merge table StockTicks (
+    eventname: string,
+    eventtime: datetime,
+    ticker: string,
+    price: real,
+    eventdesc: string
+)
+'@
+
+$mappingCommand = @'
+.create-or-alter table StockTicks ingestion avro mapping
+'StockTicksAvroMapping'
+'[{"column":"eventname","path":"$.eventname"},
+  {"column":"eventtime","path":"$.eventtime","transform":"DateTimeFromUnixMilliseconds"},
+  {"column":"ticker","path":"$.ticker"},
+  {"column":"price","path":"$.price"},
+  {"column":"eventdesc","path":"$.eventdesc"}]'
+'@
+
+foreach ($command in @($tableCommand, $mappingCommand)) {
+  $bodyPath = Join-Path $env:TEMP "eventhouse-management.json"
+  @{
+    db = $databaseName
+    csl = $command
+  } |
+    ConvertTo-Json -Compress |
+    Set-Content -Path $bodyPath -Encoding utf8NoBOM
+
+  az rest `
+    --method post `
+    --resource "https://kusto.kusto.windows.net" `
+    --url "$queryServiceUri/v1/rest/mgmt" `
+    --headers "Content-Type=application/json" `
+    --body "@$bodyPath"
+}
+```
+
+`StockTicksAvroMapping` maps the Avro fields to the Eventhouse columns. The
+`DateTimeFromUnixMilliseconds` transform converts the Avro
+`timestamp-millis` value to an Eventhouse `datetime`.
+
+### 4. Create the Fabric Event Hub cloud connection
+
+Create a dedicated listen-only Event Hubs authorization rule:
+
+```powershell
+az eventhubs eventhub authorization-rule create `
+  --subscription $subscriptionId `
+  --resource-group $resourceGroup `
+  --namespace-name $namespaceName `
+  --eventhub-name $eventHubName `
+  --name $sasRuleName `
+  --rights Listen
+
+$sasKey = az eventhubs eventhub authorization-rule keys list `
+  --subscription $subscriptionId `
+  --resource-group $resourceGroup `
+  --namespace-name $namespaceName `
+  --eventhub-name $eventHubName `
+  --name $sasRuleName `
+  --query primaryKey `
+  --output tsv
+```
+
+Create the Fabric cloud connection:
+
+```powershell
+$connectionBodyPath = Join-Path $env:TEMP "eventhub-cloud-connection.json"
+@{
+  connectivityType = "ShareableCloud"
+  displayName = "<fabric-event-hub-connection-name>"
+  connectionDetails = @{
+    type = "EventHub"
+    creationMethod = "EventHub.Contents"
+    parameters = @(
+      @{
+        dataType = "Text"
+        name = "endpoint"
+        value = "$namespaceName.servicebus.windows.net"
+      },
+      @{
+        dataType = "Text"
+        name = "entityPath"
+        value = $eventHubName
+      }
+    )
+  }
+  privacyLevel = "Organizational"
+  credentialDetails = @{
+    singleSignOnType = "None"
+    connectionEncryption = "NotEncrypted"
+    skipTestConnection = $false
+    credentials = @{
+      credentialType = "Basic"
+      username = $sasRuleName
+      password = $sasKey
+    }
+  }
+} |
+  ConvertTo-Json -Depth 10 |
+  Set-Content -Path $connectionBodyPath -Encoding utf8NoBOM
+
+$cloudConnection = az rest `
+  --method post `
+  --resource "https://api.fabric.microsoft.com" `
+  --url "https://api.fabric.microsoft.com/v1/connections" `
+  --headers "Content-Type=application/json" `
+  --body "@$connectionBodyPath" `
+  --output json |
+    ConvertFrom-Json
+
+$cloudConnectionId = $cloudConnection.id
+```
+
+The SAS key remains in process memory and is stored in the Fabric connection.
+It is not added to source control or application configuration.
+
+### 5. Create the direct Avro data connection
+
+Request a Kusto workload token:
+
+```powershell
+$mwcTokenBodyPath = Join-Path $env:TEMP "kusto-mwc-token.json"
+@{
+  type = "[Start] GetMWCTokenV2"
+  workloadType = "Kusto"
+  artifactObjectIds = @($databaseId)
+  workspaceObjectId = $workspaceId
+  capacityObjectId = $capacityId
+} |
+  ConvertTo-Json -Depth 5 |
+  Set-Content -Path $mwcTokenBodyPath -Encoding utf8NoBOM
+
+$mwcTokenResponse = az rest `
+  --method post `
+  --resource "https://analysis.windows.net/powerbi/api" `
+  --url "https://wabi-us-central-b-primary-redirect.analysis.windows.net/metadata/v201606/generatemwctokenv2" `
+  --headers "Content-Type=application/json" `
+  --body "@$mwcTokenBodyPath" `
+  --output json |
+    ConvertFrom-Json
+
+$mwcToken = $mwcTokenResponse.Token
+```
+
+Create the direct Eventhouse connection with `DataFormat` set to `Avro`:
 
 Some Fabric UI versions don't expose `Avro` in the format dropdown even though
 the underlying direct Kusto/Eventhouse data connection supports
@@ -398,11 +542,11 @@ your organization's security policy.
 
 Raw Avro datum bytes without the `Obj\x01` container header aren't accepted by
 the direct Eventhouse Avro ingestion path. The complete object container
-created by this sample is required.
+created by the application is required.
 
-## Recommended test sequence
+## Verify the implementation
 
-Test in layers so a failure can be isolated quickly.
+Verify serialization, delivery, and ingestion separately.
 
 ### 1. Check the executable and local Avro round trip
 
@@ -417,17 +561,15 @@ Test in layers so a failure can be isolated quickly.
 ```
 
 `validation=passed` proves that the body has the Avro OCF magic bytes, contains
-exactly one record, and deserializes to the original field values. It doesn't
+exactly one record, and deserializes to the original field values. It does not
 by itself prove Event Hubs delivery or Eventhouse ingestion. This command
 should report three batch sends: 2, 2, and 1 message.
 
 ### 2. Confirm Event Hubs accepted the send
 
-The process must exit with code `0`, print `Sent batch`, and list each
-`Avro OCF` event. For repeatable
-integration testing, publish a small count such as 1-5 rather than a long
-continuous stream. Azure Event Hubs metrics can also confirm incoming
-messages, but they don't prove that Eventhouse decoded them.
+The process exits with code `0`, prints `Sent batch`, and lists each
+`Avro OCF` event. Event Hubs incoming-message metrics confirm delivery to the
+service but do not confirm Eventhouse decoding.
 
 ### 3. Verify the decoded Eventhouse row
 
@@ -460,15 +602,20 @@ bytes rather than a complete Avro Object Container. Also verify that the
 connection uses the expected consumer group, table, mapping, and `Avro` data
 format.
 
-## Production considerations
+## Implementation boundaries
 
-- Batch multiple `EventData` messages for higher throughput. Start with a
-  moderate `--batch-size`, measure latency and throughput, and tune it for the
-  workload.
-- Reuse one `ProducerClient`, as this sample does.
+- The application batches multiple `EventData` messages and reuses one
+  `ProducerClient`.
 - Use a dedicated consumer group per downstream application.
-- Keep credentials outside source code.
-- Add retry, cancellation, structured logging, and monitoring appropriate for
-  your hosting environment.
-- Review Event Hubs throughput units, retention, partitioning, and message-size
-  limits before production use.
+- Credentials remain outside source code through `DefaultAzureCredential`.
+- Host-level retry, cancellation, structured logging, and monitoring are not
+  implemented.
+- Event Hubs throughput units, retention, partition count, and tier limits are
+  deployment configuration rather than application configuration.
+
+## References
+
+- [Create a Fabric connection](https://learn.microsoft.com/rest/api/fabric/core/connections/create-connection)
+- [Create an ingestion mapping](https://learn.microsoft.com/kusto/management/create-ingestion-mapping-command)
+- [Ingest data from Event Hubs](https://learn.microsoft.com/azure/data-explorer/ingest-data-event-hub-overview)
+- [Supported ingestion formats](https://learn.microsoft.com/azure/data-explorer/ingestion-supported-formats)
