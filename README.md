@@ -1,6 +1,5 @@
 # C++ Avro Publisher for Azure Event Hubs
 
-This is a C++ **Event Hubs Avro publisher** sample that generates simulated stock-ticker events, serializes each event as an Apache Avro Object Container File, and publishes it to Azure Event Hubs using passwordless Microsoft Entra authentication. This is a sample and should be evaluated before using in production.
 
 The sample intentionally keeps the implementation in one source file:
 [`eventhub_avro_publisher.cpp`](eventhub_avro_publisher.cpp).
@@ -74,7 +73,7 @@ names are retained to match the existing `StockTicks` Eventhouse sample.
 
 ### Handling five fixed fields and dynamic fields
 
-Avro isn't schema-less: every message still has a writer schema that defines
+Avro is not schema-less: every message still has a writer schema that defines
 all its fields. Eventhouse can nevertheless keep a stable table contract when
 the Avro records contain additional top-level fields. Store the five fields
 used for filtering and aggregation as typed columns, and capture everything
