@@ -303,6 +303,19 @@ creates a new batch, and retries the rejected event.
 These steps configure a direct Azure Event Hubs data connection. A Fabric
 Eventstream is not required.
 
+Some Fabric UI versions don't expose `Avro` in the format dropdown even though
+the underlying direct Kusto/Eventhouse data connection supports
+`DataFormat=Avro`. If it isn't listed, create the connection through the
+supported data-connection API or automation and set the table, mapping,
+consumer group, and `Avro` data format explicitly.
+
+Use the connector's supported passwordless identity option where available. If
+the connector requires shared-access authentication, create a dedicated
+authorization rule with **Listen only** permission. Never reuse a
+Manage/Send-capable key. Azure Policy may disable local/SAS authentication; use
+an approved narrowly scoped exemption only when required by the connector and
+your organization's security policy.
+
 ### 1. Create a dedicated consumer group
 
 Use one consumer group per downstream application so Eventhouse does not
@@ -524,25 +537,6 @@ $mwcTokenResponse = az rest `
 
 $mwcToken = $mwcTokenResponse.Token
 ```
-
-Create the direct Eventhouse connection with `DataFormat` set to `Avro`:
-
-Some Fabric UI versions don't expose `Avro` in the format dropdown even though
-the underlying direct Kusto/Eventhouse data connection supports
-`DataFormat=Avro`. If it isn't listed, create the connection through the
-supported data-connection API or automation and set the table, mapping,
-consumer group, and `Avro` data format explicitly.
-
-Use the connector's supported passwordless identity option where available. If
-the connector requires shared-access authentication, create a dedicated
-authorization rule with **Listen only** permission. Never reuse a
-Manage/Send-capable key. Azure Policy may disable local/SAS authentication; use
-an approved narrowly scoped exemption only when required by the connector and
-your organization's security policy.
-
-Raw Avro datum bytes without the `Obj\x01` container header aren't accepted by
-the direct Eventhouse Avro ingestion path. The complete object container
-created by the application is required.
 
 ## Verify the implementation
 
