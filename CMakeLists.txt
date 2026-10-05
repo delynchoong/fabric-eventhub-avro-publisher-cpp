@@ -15,17 +15,24 @@ find_package(azure-messaging-eventhubs-cpp CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 
 add_executable(eventhub_avro_publisher eventhub_avro_publisher.cpp)
-if(MSVC)
-    target_compile_options(
-        eventhub_avro_publisher PRIVATE /utf-8 /W4 /permissive-)
-else()
-    target_compile_options(
-        eventhub_avro_publisher PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-target_link_libraries(
+add_executable(
+    eventhub_avro_map_publisher
+    eventhub_avro_map_publisher.cpp
+)
+
+foreach(target IN ITEMS
     eventhub_avro_publisher
-    PRIVATE
-        avro-cpp::avrocpp
-        Azure::azure-identity
-        Azure::azure-messaging-eventhubs
-        fmt::fmt)
+    eventhub_avro_map_publisher)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /utf-8 /W4 /permissive-)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    target_link_libraries(
+        ${target}
+        PRIVATE
+            avro-cpp::avrocpp
+            Azure::azure-identity
+            Azure::azure-messaging-eventhubs
+            fmt::fmt)
+endforeach()
