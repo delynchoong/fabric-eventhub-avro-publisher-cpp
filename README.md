@@ -29,14 +29,14 @@ Evaluate both before using them in production.
 | --- | --- | --- |
 | Complete OCF containing a record and embedded schema | Successfully ingested | Required |
 | Fixed primitive fields in the record | Decoded by schema order without repeating field labels | Recommended |
-| Avro map stored in a KQL `dynamic` column | Arbitrary keys queried successfully | Recommended |
+| Avro _map_ type stored in a KQL `dynamic` column | Arbitrary keys queried successfully | Recommended |
 | Multiple records and blocks in one OCF/EventData | Five records produced five Eventhouse rows | Validated |
 | Raw Avro datum without OCF header/schema | Rejected with `wrong magic in header` | Do not use |
 | Cross-database routing with the `Database` property | No rows reached the target database | Not supported by Fabric |
 
 The standalone project intentionally does not include raw-datum or
-cross-database publishers. Those executables in the larger FabricOps PoC are
-negative compatibility tests, not deployable patterns.
+cross-database publishers. Those executables in the larger FabricOps Repo are
+negative tests that were tested and failed, hence removed from this standalone project.
 
 ## Recommended message format
 
@@ -163,8 +163,8 @@ growth.
 
 ## Verified record and map publisher
 
-`eventhub_avro_map_publisher` implements the governed design described above.
-Its top-level Avro `record` has five fixed fields followed by a map:
+`eventhub_avro_map_publisher` implements the currently identified best design described above.
+Its top-level Avro `record` has five fixed fields followed by data type _map_. The advantage of _map_ type is the flexibility this allows for dynamic/changing fields. Static keys do not need to be declared in schema, while the _map_ type takes a json string, which Eventhouse successfully ingests as _dynamic_ column:
 
 ```json
 {
@@ -205,7 +205,7 @@ The fixed field names are stored once in the OCF writer schema. Record bodies
 encode their fixed values in schema order. Map entry keys are carried with
 their values because those names vary by record.
 
-The publisher creates one binary OCF with five records and five data blocks:
+The publisher creates one binary OCF with five records and five data blocks of varying length:
 
 | Ticker | Map keys | Key count |
 | --- | --- | ---: |
@@ -299,61 +299,6 @@ DynamicTicks
     tradePrice=todouble(variablefields.tradePrice),
     tradeSize=tolong(variablefields.tradeSize)
 ```
-
-## Options that did not work
-
-### Raw Avro datum without an embedded schema
-
-The Fabric direct connection was tested with raw binary record data that did
-not contain the OCF `Obj\x01` header, writer schema, metadata, or sync marker.
-Event Hubs accepted the messages, but Eventhouse produced no rows and reported:
-
-```text
-BadRequest_InvalidBlob: wrong magic in header
-```
-
-Setting `ContentType` or `avro.schema.name` AMQP metadata does not replace the
-writer schema required inside the body. Always send a complete OCF for this
-connector.
-
-### Cross-database message routing
-
-Same-database table routing works with the case-sensitive `Table` and
-`IngestionMappingReference` properties. Cross-database routing did not work
-when messages also supplied:
-
-```text
-Database=TASDatabase
-```
-
-ADX supports this only when the receiving data connection is configured with
-`databaseRouting=Multi`. Fabric Eventhouse does not expose an equivalent
-setting or a customer-addressable `Microsoft.Kusto/clusters/...` ARM resource.
-Use one static Event Hub/data connection per destination database, or implement
-a custom consumer that performs destination-specific ingestion.
-
-### Why use an Avro Object Container?
-
-For the validated direct Fabric Eventhouse connection, each Event Hubs message
-must contain a complete Avro Object Container File. A raw Avro binary datum was
-rejected by this ingestion path because it has no `Obj\x01` header or embedded
-writer schema.
-
-Embedding the schema in every message adds overhead, so one-record containers
-aren't the most space-efficient general-purpose Avro transport. They are used
-here for compatibility with the direct Eventhouse `Avro` data format. For a
-different consumer that supports schema registries or externally supplied
-schemas, raw datum encoding may be more efficient.
-
-### Serialization and deserialization
-
-- **Serialization is required by the publisher.** It converts the in-memory
-  `StockTick` C++ object into the Avro bytes sent in `EventData.Body`.
-- **Deserialization is not required to publish.** This sample uses it only when
-  `--validate-payload` is supplied. It reads the generated container back and
-  verifies that it contains exactly one record matching the original object.
-- Eventhouse performs the downstream deserialization using the Avro writer
-  schema and the configured ingestion mapping.
 
 ## Prerequisites
 
@@ -492,7 +437,7 @@ Completed test: eventsSent=25, batchesSent=3
 
 No connection strings or access keys are required by the publisher.
 
-## Recommended sending method?
+## Recommended sending method
 
 For this direct Eventhouse ingestion scenario:
 
@@ -677,6 +622,61 @@ A `wrong magic in header` failure means the message contains raw Avro datum
 bytes rather than a complete Avro Object Container. Also verify that the
 connection uses the expected consumer group, table, mapping, and `Avro` data
 format.
+
+## Appendix: Testing scenarios with identified limitations
+
+### Raw Avro datum without an embedded schema
+
+The Fabric direct connection was tested with raw binary record data that did
+not contain the OCF `Obj\x01` header, writer schema, metadata, or sync marker.
+Event Hubs accepted the messages, but Eventhouse produced no rows and reported:
+
+```text
+BadRequest_InvalidBlob: wrong magic in header
+```
+
+Setting `ContentType` or `avro.schema.name` AMQP metadata does not replace the
+writer schema required inside the body. Always send a complete OCF for this
+connector.
+
+### Cross-database message routing
+
+Same-database table routing works with the case-sensitive `Table` and
+`IngestionMappingReference` properties. Cross-database routing did not work
+when messages also supplied:
+
+```text
+Database=TASDatabase
+```
+
+ADX supports this only when the receiving data connection is configured with
+`databaseRouting=Multi`. Fabric Eventhouse does not expose an equivalent
+setting or a customer-addressable `Microsoft.Kusto/clusters/...` ARM resource.
+Use one static Event Hub/data connection per destination database, or implement
+a custom consumer that performs destination-specific ingestion.
+
+### Why use an Avro Object Container?
+
+For the validated direct Fabric Eventhouse connection, each Event Hubs message
+must contain a complete Avro Object Container File. A raw Avro binary datum was
+rejected by this ingestion path because it has no `Obj\x01` header or embedded
+writer schema.
+
+Embedding the schema in every message adds overhead, so one-record containers
+aren't the most space-efficient general-purpose Avro transport. They are used
+here for compatibility with the direct Eventhouse `Avro` data format. For a
+different consumer that supports schema registries or externally supplied
+schemas, raw datum encoding may be more efficient.
+
+### Serialization and deserialization
+
+- **Serialization is required by the publisher.** It converts the in-memory
+  `StockTick` C++ object into the Avro bytes sent in `EventData.Body`.
+- **Deserialization is not required to publish.** This sample uses it only when
+  `--validate-payload` is supplied. It reads the generated container back and
+  verifies that it contains exactly one record matching the original object.
+- Eventhouse performs the downstream deserialization using the Avro writer
+  schema and the configured ingestion mapping.
 
 ## Production considerations
 
