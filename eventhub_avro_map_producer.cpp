@@ -196,7 +196,7 @@ Options parse_options(int argc, char* argv[]) {
             options.dump_avro = argv[++index];
         } else if (argument == "--help") {
             std::cout
-                << "Usage: eventhub_avro_map_publisher "
+                << "Usage: eventhub_avro_map_producer "
                    "[--print-message] [--dump-avro PATH] "
                    "[--validate-only]\n";
             std::exit(0);
@@ -608,7 +608,7 @@ int main(int argc, char* argv[]) {
                   << " data blocks; local validation passed\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "Publisher failed: " << error.what() << '\n';
+        std::cerr << "Producer failed: " << error.what() << '\n';
         return 1;
     }
 }

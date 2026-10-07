@@ -1,5 +1,5 @@
 {
-  "name": "eventhub-avro-publisher",
+  "name": "eventhub-avro-producer",
   "version-string": "1.0.0",
   "dependencies": [
     "avro-cpp",

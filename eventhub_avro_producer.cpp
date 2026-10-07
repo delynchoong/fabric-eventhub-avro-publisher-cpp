@@ -157,7 +157,7 @@ Options parse_options(int argc, char* argv[]) {
             options.validate_payload = true;
         } else if (argument == "--help") {
             std::cout
-                << "Usage: eventhub_avro_publisher "
+                << "Usage: eventhub_avro_producer "
                    "[--count EVENTS] [--batch-size EVENTS] "
                    "[--interval-ms MILLISECONDS] "
                    "[--validate-payload]\n";
@@ -236,7 +236,7 @@ sample::StockTick deserialize_avro_container(
 void validate_round_trip(
     const sample::StockTick& expected,
     const std::vector<std::uint8_t>& payload) {
-    // This is a publisher-side diagnostic, not part of normal delivery.
+    // This is a producer-side diagnostic, not part of normal delivery.
     // It catches schema/codec mistakes before the bytes leave the process.
     const auto decoded = deserialize_avro_container(payload);
     if (decoded.eventname != expected.eventname ||
@@ -430,7 +430,7 @@ int main(int argc, char* argv[]) {
                   << ", batchesSent=" << sent_batch_count << '\n';
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "Publisher failed: " << error.what() << '\n';
+        std::cerr << "Producer failed: " << error.what() << '\n';
         return 1;
     }
 }

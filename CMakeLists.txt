@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(eventhub_avro_publisher LANGUAGES CXX)
+project(eventhub_avro_producer LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,15 +14,15 @@ find_package(azure-identity-cpp CONFIG REQUIRED)
 find_package(azure-messaging-eventhubs-cpp CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 
-add_executable(eventhub_avro_publisher eventhub_avro_publisher.cpp)
+add_executable(eventhub_avro_producer eventhub_avro_producer.cpp)
 add_executable(
-    eventhub_avro_map_publisher
-    eventhub_avro_map_publisher.cpp
+    eventhub_avro_map_producer
+    eventhub_avro_map_producer.cpp
 )
 
 foreach(target IN ITEMS
-    eventhub_avro_publisher
-    eventhub_avro_map_publisher)
+    eventhub_avro_producer
+    eventhub_avro_map_producer)
     if(MSVC)
         target_compile_options(${target} PRIVATE /utf-8 /W4 /permissive-)
     else()

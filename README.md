@@ -1,4 +1,4 @@
-# C++ Avro Publisher for Azure Event Hubs
+# C++ Avro Producer for Azure Event Hubs
 
 This C++ sample demonstrates the validated Fabric Eventhouse ingestion pattern:
 
@@ -10,14 +10,14 @@ Azure Event Hubs EventData
         └── variablefields map -> KQL dynamic column
 ```
 
-Use [`eventhub_avro_map_publisher.cpp`](eventhub_avro_map_publisher.cpp) as the
+Use [`eventhub_avro_map_producer.cpp`](eventhub_avro_map_producer.cpp) as the
 primary implementation. It publishes five records with different dynamic map
 keys in one self-describing OCF body and validates the exact bytes before
 sending.
 
 The directory also includes:
 
-- [`eventhub_avro_publisher.cpp`](eventhub_avro_publisher.cpp), which sends
+- [`eventhub_avro_producer.cpp`](eventhub_avro_producer.cpp), which sends
   one fixed-field `StockTick` record per EventData body as a simpler baseline.
 
 Each executable remains self-contained for reuse as an independent sample.
@@ -35,13 +35,13 @@ Evaluate both before using them in production.
 | Cross-database routing with the `Database` property | No rows reached the target database | Not supported by Fabric |
 
 The standalone project intentionally does not include raw-datum or
-cross-database publishers. Those executables in the larger FabricOps Repo are
+cross-database producers. Those executables in the larger FabricOps Repo are
 negative tests that were tested and failed, hence removed from this standalone project.
 
 ## Recommended message format
 
 The recommended message schema is documented in
-[Verified record and map publisher](#verified-record-and-map-publisher).
+[Verified record and map producer](#verified-record-and-map-producer).
 Each EventData body must be a complete Avro OCF beginning with `Obj\x01`.
 
 ## Fixed-record baseline
@@ -161,9 +161,9 @@ prefer the explicit `variablefields` Avro map validated below. It gives the
 dynamic contract a stable location and avoids uncontrolled top-level schema
 growth.
 
-## Verified record and map publisher
+## Verified record and map producer
 
-`eventhub_avro_map_publisher` implements the currently identified best design described above.
+`eventhub_avro_map_producer` implements the currently identified best design described above.
 Its top-level Avro `record` has five fixed fields followed by data type _map_. The advantage of _map_ type is the flexibility this allows for dynamic/changing fields. Static keys do not need to be declared in schema, while the _map_ type takes a json string, which Eventhouse successfully ingests as _dynamic_ column:
 
 ```json
@@ -205,7 +205,7 @@ The fixed field names are stored once in the OCF writer schema. Record bodies
 encode their fixed values in schema order. Map entry keys are carried with
 their values because those names vary by record.
 
-The publisher creates one binary OCF with five records and five data blocks of varying length:
+The producer creates one binary OCF with five records and five data blocks of varying length:
 
 | Ticker | Map keys | Key count |
 | --- | --- | ---: |
@@ -245,7 +245,7 @@ Create the Eventhouse table and mapping:
 Validate and dump the exact body locally without publishing:
 
 ```powershell
-& "C:\b\eventhub-avro\Release\eventhub_avro_map_publisher.exe" `
+& "C:\b\eventhub-avro\Release\eventhub_avro_map_producer.exe" `
   --validate-only `
   --print-message `
   --dump-avro ".\dynamic-map-five-blocks.avro"
@@ -257,7 +257,7 @@ Publish the same scenario:
 $env:EVENTHUBS_HOST = "<namespace>.servicebus.windows.net"
 $env:EVENTHUB_NAME = "<event-hub-name>"
 
-& "C:\b\eventhub-avro\Release\eventhub_avro_map_publisher.exe" `
+& "C:\b\eventhub-avro\Release\eventhub_avro_map_producer.exe" `
   --print-message `
   --dump-avro ".\dynamic-map-five-blocks.avro"
 ```
@@ -388,7 +388,7 @@ Set the Event Hubs namespace hostname and Event Hub name:
 $env:EVENTHUBS_HOST = "<namespace>.servicebus.windows.net"
 $env:EVENTHUB_NAME = "<event-hub-name>"
 
-& "C:\b\eventhub-avro\Release\eventhub_avro_publisher.exe" `
+& "C:\b\eventhub-avro\Release\eventhub_avro_producer.exe" `
   --count 25 `
   --batch-size 10 `
   --interval-ms 100 `
@@ -405,7 +405,7 @@ Arguments:
 | `--validate-payload` | Off | Deserialize each generated OCF locally and verify a one-record round trip before publishing |
 | `--help` | | Display usage |
 
-The map publisher has these arguments:
+The map producer has these arguments:
 
 | Argument | Purpose |
 | --- | --- |
@@ -435,7 +435,7 @@ Sent batch 3: events=5, totalEventsSent=25
 Completed test: eventsSent=25, batchesSent=3
 ```
 
-No connection strings or access keys are required by the publisher.
+No connection strings or access keys are required by the producer.
 
 ## Recommended sending method
 
@@ -453,7 +453,7 @@ into one EventData body. This preserves per-message metadata and lets
 Eventhouse decode each stock tick independently.
 
 The fixed `--batch-size` makes tests deterministic. In a production
-throughput-oriented publisher, it is common to keep adding messages until
+throughput-oriented producer, it is common to keep adding messages until
 `TryAdd` returns false, send the full batch, and then continue with a new
 batch. Production code should also define retry, cancellation, idempotency,
 and failed-message handling behavior.
@@ -486,7 +486,7 @@ az eventhubs eventhub consumer-group create `
   --name fabric-eventhouse
 ```
 
-The publisher doesn't select a consumer group. Consumer groups are selected
+The producer doesn't select a consumer group. Consumer groups are selected
 only by receivers such as the Eventhouse data connection.
 
 ### 2. Create the Eventhouse table and Avro mapping
@@ -570,9 +570,9 @@ Test in layers so a failure can be isolated quickly.
 ### 1. Check the executable and local Avro round trip
 
 ```powershell
-& "C:\b\eventhub-avro\Release\eventhub_avro_publisher.exe" --help
+& "C:\b\eventhub-avro\Release\eventhub_avro_producer.exe" --help
 
-& "C:\b\eventhub-avro\Release\eventhub_avro_publisher.exe" `
+& "C:\b\eventhub-avro\Release\eventhub_avro_producer.exe" `
   --count 5 `
   --batch-size 2 `
   --interval-ms 100 `
@@ -670,7 +670,7 @@ schemas, raw datum encoding may be more efficient.
 
 ### Serialization and deserialization
 
-- **Serialization is required by the publisher.** It converts the in-memory
+- **Serialization is required by the producer.** It converts the in-memory
   `StockTick` C++ object into the Avro bytes sent in `EventData.Body`.
 - **Deserialization is not required to publish.** This sample uses it only when
   `--validate-payload` is supplied. It reads the generated container back and
